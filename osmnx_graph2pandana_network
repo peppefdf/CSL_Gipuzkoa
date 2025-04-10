@@ -1,0 +1,110 @@
+import osmnx as ox
+import pandana as pdna
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import itertools
+import networkx as nx
+import random
+
+# Define the bounding box for Donostia-San Sebastian, Gipuzkoa, Spain
+north = 43.3333
+south = 43.2833
+east = -1.9333
+west = -2.0333
+
+# Create the graph
+#G = ox.graph_from_bbox(north, south, east, west, network_type='drive', simplify=False)
+G = ox.graph_from_bbox(north, south, east, west, network_type='drive', simplify=True)
+
+# Add edge speeds
+G = ox.add_edge_speeds(G)
+
+G = ox.distance.add_edge_lengths(G)
+
+# Add edge traveling times
+G = ox.add_edge_travel_times(G)
+
+G = nx.DiGraph(G)
+
+
+def create_nodes_df(G):
+    # first make a df from the nodes
+    # and pivot the results so that the 
+    # individual node ids are listed as
+    # row indices
+    #nodes_df = pd.DataFrame(G.node).T
+    # Get nodes as a dictionary
+    nodes_dict = dict(G.nodes(data=True))
+
+    # Convert nodes dictionary to a Pandas DataFrame
+    nodes_df = pd.DataFrame.from_dict(nodes_dict, orient='index')
+    
+    # preserve these indices as a column values, too
+    nodes_df['id'] = nodes_df.index
+    # and cast it as an integer
+    nodes_df['id'] = nodes_df['id'].astype(int)
+    
+    return nodes_df
+
+
+def create_edges_df(G):
+    edges_ref = {}
+    
+    # move through edges
+    for u, v, data in G.edges(data=True):
+        #edge_dict = data.copy()
+        edge_dict = {}
+        edge_dict['st_node'] = u
+        edge_dict['en_node'] = v
+        
+        # Get the edge length
+        edge_dict['length'] = data['length']
+        
+        # ugly, and unnecessary but might as well name the index something useful
+        name = '{}_{}'.format(u, v)
+        
+        # update the top level reference dict with this new, prepared sub-dict
+        edges_ref[name] = edge_dict
+    
+    # let's take the resulting dict and convert it to a Pandas df, and pivot it as with the nodes method to get unique edges as rows
+    edges_df = pd.DataFrame(edges_ref).T
+    
+    # update the edge start and stop nodes as integers which is necessary for Pandana
+    edges_df['st_node'] = edges_df['st_node'].astype(np.int64)
+    edges_df['en_node'] = edges_df['en_node'].astype(np.int64)
+    
+    return edges_df
+
+nodes_df = create_nodes_df(G)
+edges_df = create_edges_df(G)
+
+"""
+# Instantiate a Pandana (pdna) network (net)
+net = pdna.Network(nodes_df['x'], nodes_df['y'],
+                   edges_df['st_node'], edges_df['en_node'],
+                   edges_df[['weight']])
+"""
+
+
+net = pdna.Network(nodes_df['x'], nodes_df['y'],
+                   edges_df['st_node'], edges_df['en_node'],
+                   edges_df[['length']])
+
+
+# Get the node coordinates
+node_x = nodes_df['x']
+node_y = nodes_df['y']
+
+# Get the edge coordinates
+edge_x = edges_df['st_node']
+edge_y = edges_df['en_node']
+
+# Plot the nodes
+plt.scatter(node_x, node_y)
+
+# Plot the edges
+for i, row in edges_df.iterrows():
+    plt.plot([node_x[row['st_node']], node_x[row['en_node']]], [node_y[row['st_node']], node_y[row['en_node']]], 'k-')
+
+plt.show()
